@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import io
 
 # --- Configurações da Aplicação ---
@@ -24,11 +25,8 @@ def processar_dados_ferrovia(uploaded_file):
     """
     Carrega, limpa e processa o arquivo, suportando .csv ou .xlsx.
     """
-    
-    # Determina o tipo de arquivo pela extensão
     file_extension = uploaded_file.name.split('.')[-1].lower()
     
-    # 1. Carregamento e Seleção de Colunas por Índice
     try:
         if file_extension == 'csv':
             # Leitura para CSV: usa separador ',' e header na 5ª linha (index 4)
@@ -44,7 +42,7 @@ def processar_dados_ferrovia(uploaded_file):
             df = pd.read_excel(
                 uploaded_file,
                 header=4, 
-                sheet_name=0 # Assume a primeira aba
+                sheet_name=0 
             )
         else:
             st.error("Formato de arquivo não suportado. Use .csv ou .xlsx.")
@@ -55,9 +53,8 @@ def processar_dados_ferrovia(uploaded_file):
         df_limpo = df.iloc[:, colunas_para_selecionar].copy()
         df_limpo.columns = COL_MAP.values()
 
-        # 2. Limpeza e Tipagem de Dados
+        # Limpeza e Tipagem de Dados
         df_limpo = df_limpo.dropna(subset=['Parameter'])
-
         df_limpo['Value'] = pd.to_numeric(df_limpo['Value'], errors='coerce')
         df_limpo = df_limpo.dropna(subset=['Value'])
         
@@ -75,17 +72,16 @@ def processar_dados_ferrovia(uploaded_file):
 # --- Interface Streamlit ---
 
 st.title("Rail Track Geometry Analyzer (SUPERVIA)")
-st.markdown("Ferramenta para limpeza e análise do Relatório de Inspeção de Geometria da Via (CSV ou XLSX).")
+st.markdown("Ferramenta para limpeza e análise do Relatório de Inspeção de Geometria da Via.")
 
 # Widget de Carregamento de Arquivo
 uploaded_file = st.file_uploader(
     "1. Carregue o arquivo do relatório (.csv ou .xlsx)", 
-    type=['csv', 'xlsx'] # Agora aceita os dois formatos
+    type=['csv', 'xlsx']
 )
 
 if uploaded_file is not None:
     
-    # Processa os dados
     df_limpo = processar_dados_ferrovia(uploaded_file)
     
     if not df_limpo.empty:
@@ -95,28 +91,72 @@ if uploaded_file is not None:
         # | Análise Interativa |
         # ----------------------------------------
         
-        st.header("2. Análise Interativa")
+        st.header("2. Análise de Desvios")
         
-        tipos_de_parametro = sorted(df_limpo['Parameter'].unique().tolist())
-        selected_parameter = st.selectbox(
-            "Selecione o Parâmetro de Interesse:", 
-            tipos_de_parametro, 
-            index=tipos_de_parametro.index('Gage Wide') if 'Gage Wide' in tipos_de_parametro else 0
-        )
+        # Colunas para os filtros
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            # Filtro de Parâmetros
+            tipos_de_parametro = sorted(df_limpo['Parameter'].unique().tolist())
+            selected_parameter = st.selectbox(
+                "Selecione o Parâmetro de Interesse:", 
+                tipos_de_parametro, 
+                index=tipos_de_parametro.index('Gage Wide') if 'Gage Wide' in tipos_de_parametro else 0
+            )
+
+        with col2:
+            # NOVO: Seleção de Ordenação (Maiores ou Menores)
+            ordenacao = st.radio(
+                "Critério de Ordenação (para o Top N):",
+                ("Maiores Valores (Críticos)", "Menores Valores"),
+                horizontal=True
+            )
         
         df_filtrado = df_limpo[df_limpo['Parameter'] == selected_parameter]
 
         if not df_filtrado.empty:
+            
+            # Filtro Top N
             num_top = st.slider(
-                f"Mostrar os Top N ({selected_parameter}) mais críticos (maiores Valores):", 
+                f"Mostrar os Top N ({selected_parameter}):", 
                 min_value=5, 
                 max_value=min(200, len(df_filtrado)), 
                 value=20
             )
 
-            df_criticos = df_filtrado.sort_values(by='Value', ascending=False).head(num_top)
+            # Define a ordem de classificação
+            is_ascending = True if ordenacao == "Menores Valores" else False
             
-            st.subheader(f"Top {num_top} Desvios de **{selected_parameter}**")
+            # Encontra os N mais críticos/menores
+            df_criticos = df_filtrado.sort_values(by='Value', ascending=is_ascending).head(num_top).reset_index(drop=True)
+            
+            # ----------------------------------------
+            # | Visualização (Gráfico) |
+            # ----------------------------------------
+            st.subheader(f"Visualização: Top {num_top} Desvios de **{selected_parameter}**")
+            
+            # Cria o gráfico de barras interativo com Plotly
+            if not df_criticos.empty:
+                fig = px.bar(
+                    df_criticos, 
+                    x='Localização', 
+                    y='Value', 
+                    color='Value',
+                    title=f'Comparação de {selected_parameter} por Localização',
+                    labels={'Value': 'Valor Medido (mm)', 'Localização': 'KM+M'},
+                    hover_data=['Track', 'TSC', 'Peak Lat/Long']
+                )
+                # Garante que o gráfico mostre as barras na ordem de Value (descendente ou ascendente)
+                fig.update_xaxes(categoryorder='array', categoryarray=df_criticos['Localização'])
+                
+                st.plotly_chart(fig, use_container_width=True)
+
+
+            # ----------------------------------------
+            # | Tabela de Dados |
+            # ----------------------------------------
+            st.subheader(f"Tabela de Dados: Top {num_top} Desvios de **{selected_parameter}**")
             st.dataframe(
                 df_criticos[['Localização', 'Parameter', 'Value', 'Length', 'TSC', 'Peak Lat/Long']], 
                 use_container_width=True,
@@ -138,4 +178,4 @@ if uploaded_file is not None:
             st.warning(f"Nenhum dado de medição encontrado para o parâmetro: {selected_parameter}")
             
     else:
-        st.warning("O DataFrame está vazio após o processamento. Verifique se o cabeçalho do arquivo está correto (linha 5).")
+        st.warning("O DataFrame está vazio após o processamento. Verifique se o arquivo está correto.")
