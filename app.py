@@ -22,16 +22,28 @@ TOLERANCE_LIMITS = {
     'L Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
     'R Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
 }
+
+IGNORED_PARAMETERS = [
+    'Railroad', 'Subdivision', 'Tunnel Start', 'Tunnel End', 'Bridge End', 
+    'Bridge Start', 'Concrete Ties End', 'Concrete Ties Start', 
+    'Timber Ties End', 'Timber Ties Start', 'Rail Joint', 'Level Crossing',
+    'Switch/Frog', 'Up Kilometer', 'Down Kilometer', 'Track Change', 
+    'Class Change', 'Posted Speed' 
+]
 # ====================================================================
 
 
 # --- Mapeamentos para os DOIS formatos possíveis ---
+
+# NOVO MAPEARMENTO COMPLEXO: Inclui colunas adjacentes para o campo 'Value'
 COMPLEX_COL_MAP = {
-    0: 'KM', 3: 'M', 8: 'Parameter', 26: 'Value', 
+    0: 'KM', 3: 'M', 8: 'Parameter', 
+    26: 'Value_26', 27: 'Value_27', 28: 'Value_28',  # Colunas de contingência para o Value
     31: 'Length', 39: 'Speed', 44: 'TSC', 55: 'Track', 62: 'Peak Lat/Long'
 }
 COMPLEX_HEADER_ROW = 4
 
+# Mapeamento do formato simplificado (CSV filtrado) - MANTIDO
 SIMPLIFIED_REQUIRED_COLS = ['KM', 'M', 'Parameter', 'Value', 'Length', 'Speed', 'TSC', 'Track', 'Peak Lat', 'Peak Long']
 SIMPLIFIED_HEADER_ROW = 0 
 
@@ -59,7 +71,7 @@ def check_conformity(df):
     return df
 
 
-# --- Função Principal de Limpeza e Processamento (Aprimorada para Transparência) ---
+# --- Função Principal de Limpeza e Processamento (Aprimorada para Flexibilidade) ---
 @st.cache_data
 def processar_dados_ferrovia(uploaded_file):
     
@@ -67,94 +79,96 @@ def processar_dados_ferrovia(uploaded_file):
     df_limpo = pd.DataFrame()
     is_simplified = False
     
-    # 1. TENTA LER O ARQUIVO NO FORMATO SIMPLIFICADO (Headers na linha 1)
+    # 1. TENTA LER O ARQUIVO NO FORMATO SIMPLIFICADO
     try:
         uploaded_file.seek(0)
         
         if file_extension == 'csv':
-            df_read = pd.read_csv(
-                uploaded_file, sep=',', header=SIMPLIFIED_HEADER_ROW, 
-                engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ
-            )
+            df_read = pd.read_csv(uploaded_file, sep=',', header=SIMPLIFIED_HEADER_ROW, engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ)
         elif file_extension == 'xlsx':
-            df_read = pd.read_excel(
-                uploaded_file, header=SIMPLIFIED_HEADER_ROW, sheet_name=0,
-                nrows=MAX_ROWS_TO_READ
-            )
+            df_read = pd.read_excel(uploaded_file, header=SIMPLIFIED_HEADER_ROW, sheet_name=0, nrows=MAX_ROWS_TO_READ)
 
-        # Limpar nomes de colunas
         df_read.columns = df_read.columns.str.strip() 
-        
-        # Checa se é o formato SIMPLIFICADO: verifica se as colunas-chave estão presentes
         is_simplified = all(col in df_read.columns for col in ['Peak Lat', 'Peak Long', 'KM', 'Parameter'])
         
         if is_simplified:
-            # st.info("Formato SIMPLIFICADO (Filtrado) detectado. Usando mapeamento direto.")
-            
+            # st.info("Formato SIMPLIFICADO (Filtrado) detectado.")
             df_limpo = df_read[df_read.columns.intersection(SIMPLIFIED_REQUIRED_COLS)].copy()
-            
-            # Combinação das colunas Peak Lat e Peak Long
             df_limpo['Peak Lat/Long'] = df_limpo['Peak Lat'].astype(str) + ',' + df_limpo['Peak Long'].astype(str)
             df_limpo = df_limpo.drop(columns=['Peak Lat', 'Peak Long'], errors='ignore')
             
+            # Renomeia o 'Value' para o padrão final, para que a lógica de limpeza abaixo funcione
+            df_limpo = df_limpo.rename(columns={'Value': 'Value_26'}) 
+            
         else:
-            # st.info("Não é formato simplificado. Tentando a estrutura Original do Relatório (COMPLEXO).")
             pass
             
     except Exception:
         is_simplified = False
 
 
-    # 2. TENTA LER O ARQUIVO NO FORMATO COMPLEXO (Headers na linha 5)
+    # 2. TENTA LER O ARQUIVO NO FORMATO COMPLEXO
     if not is_simplified:
         try:
             uploaded_file.seek(0) 
 
             if file_extension == 'csv':
-                df = pd.read_csv(
-                    uploaded_file, sep=',', header=COMPLEX_HEADER_ROW, 
-                    engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ
-                )
+                df = pd.read_csv(uploaded_file, sep=',', header=COMPLEX_HEADER_ROW, engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ)
             elif file_extension == 'xlsx':
-                df = pd.read_excel(
-                    uploaded_file, header=COMPLEX_HEADER_ROW, sheet_name=0,
-                    nrows=MAX_ROWS_TO_READ
-                )
+                df = pd.read_excel(uploaded_file, header=COMPLEX_HEADER_ROW, sheet_name=0, nrows=MAX_ROWS_TO_READ)
 
+            # Seleciona as colunas usando os índices definidos no novo mapa
             colunas_para_selecionar = list(COMPLEX_COL_MAP.keys())
             df_limpo = df.iloc[:, colunas_para_selecionar].copy()
             df_limpo.columns = COMPLEX_COL_MAP.values()
             
         except Exception as complex_e:
             st.error(f"Erro Crítico ao processar arquivo nos dois formatos. Verifique o cabeçalho. Detalhe: {complex_e}")
-            return None # Retorna None em caso de falha crítica
-
+            return None, None, None 
 
     # --- Lógica de Limpeza Comum aos DOIS Formatos ---
-    if df_limpo.empty: return None
+    if df_limpo.empty: return None, None, None
     
-    # Limpeza de linhas sem Parameter
+    all_raw_parameters = df_limpo['Parameter'].astype(str).str.strip().unique().tolist()
+    
+    # 1. Limpeza de linhas sem Parameter
     df_limpo = df_limpo.dropna(subset=['Parameter'])
     
-    # NEW: Armazena a contagem ANTES de remover os valores nulos
+    # 2. FILTRAR PARÂMETROS DE IDENTIFICAÇÃO (TEXTO)
+    df_limpo['Parameter'] = df_limpo['Parameter'].astype(str).str.strip()
+    df_limpo = df_limpo[~df_limpo['Parameter'].isin(IGNORED_PARAMETERS)].copy()
+
+    # 3. CONSOLIDAÇÃO DO CAMPO 'VALUE' (Safety Net)
+    value_cols = [col for col in df_limpo.columns if col.startswith('Value_')]
+    
+    # Prepara as colunas Value para conversão (limpa ruído)
+    for col in value_cols:
+        df_limpo[col] = df_limpo[col].astype(str).str.replace(' ', '').str.replace(',', '.').str.strip()
+        df_limpo[col] = pd.to_numeric(df_limpo[col], errors='coerce')
+        
+    # Coalesce: O campo 'Value' final será o primeiro campo numérico válido encontrado 
+    # entre Value_26, Value_27, Value_28, etc.
+    df_limpo['Value'] = df_limpo[value_cols].bfill(axis=1).iloc[:, 0]
+    
+    # 4. Armazena a contagem ANTES de remover os valores nulos
     rows_before_value_filter = len(df_limpo)
     
-    # Limpeza e Tipagem de Dados
-    df_limpo['Value'] = pd.to_numeric(df_limpo['Value'], errors='coerce')
-    df_limpo = df_limpo.dropna(subset=['Value']) # Remove linhas que não são de medição
+    # 5. Remove linhas que falharam na conversão/coalescência (Value ainda é NaN)
+    df_limpo = df_limpo.dropna(subset=['Value'])
     
-    # Conversão segura de KM/M 
+    # 6. Cria a Localização
     df_limpo['KM'] = pd.to_numeric(df_limpo['KM'], errors='coerce').fillna(0).astype(int)
     df_limpo['M'] = pd.to_numeric(df_limpo['M'], errors='coerce').fillna(0).astype(int)
-    
     df_limpo['Localização'] = df_limpo['KM'].astype(str) + '+' + df_limpo['M'].astype(str).str.zfill(3)
+    
+    # Remove as colunas temporárias de Value
+    df_limpo = df_limpo.drop(columns=value_cols, errors='ignore')
 
     df_limpo_analisado = check_conformity(df_limpo)
 
-    # Retorna o DataFrame limpo e a contagem antes do filtro final
-    return df_limpo_analisado, rows_before_value_filter 
+    return df_limpo_analisado, rows_before_value_filter, all_raw_parameters 
 
-# --- Interface Streamlit (Atualizada para mostrar a contagem) ---
+# --- Interface Streamlit (Mantida) ---
 
 st.title("Rail Track Geometry Analyzer (SUPERVIA) 📊")
 st.markdown("**1. ATENÇÃO:** Ajuste os limites na tabela `TOLERANCE_LIMITS` no código `app.py` com os valores corretos da SUPERVIA.")
@@ -169,20 +183,47 @@ if uploaded_file is not None:
     result = processar_dados_ferrovia(uploaded_file)
     
     if result is not None:
-        df_limpo, rows_before_value_filter = result
+        df_limpo, rows_before_value_filter, all_raw_parameters = result
 
         if not df_limpo.empty:
             st.success(f"Arquivo '{uploaded_file.name}' carregado e processado com **{len(df_limpo)} linhas de dados de medição válidos**.")
             
-            if rows_before_value_filter > len(df_limpo):
-                 st.info(f"**Detalhe da Limpeza:** O arquivo inicialmente continha **{rows_before_value_filter} linhas** com um Parâmetro definido, mas {rows_before_value_filter - len(df_limpo)} foram descartadas por terem valores nulos ou não numéricos no campo 'Value'.")
+            rows_discarded = rows_before_value_filter - len(df_limpo)
+            if rows_discarded > 0:
+                 st.info(f"**Detalhe da Limpeza:** {rows_before_value_filter} linhas com Parâmetros de Geometria foram consideradas, mas **{rows_discarded} foram descartadas** por terem valores nulos ou não numéricos no campo 'Value'.")
+            else:
+                 st.info(f"**Detalhe da Limpeza:** O filtro de Parâmetros de Identificação foi aplicado. Todas as {len(df_limpo)} linhas restantes têm valores numéricos válidos.")
 
+            # --- FERRAMENTA DE DIAGNÓSTICO ---
+            with st.expander("🛠️ Ferramenta de Diagnóstico: Parâmetros Encontrados no Arquivo"):
+                st.warning("Use esta ferramenta para verificar se todos os Parâmetros esperados (medições de geometria) foram lidos e para identificar o que está sendo filtrado.")
+                
+                st.info(f"Foram encontrados **{len(all_raw_parameters)}** Parâmetros únicos na leitura inicial do arquivo.")
+                
+                geometry_params = [p for p in all_raw_parameters if p in TOLERANCE_LIMITS.keys()]
+                ignored_params = [p for p in all_raw_parameters if p in IGNORED_PARAMETERS]
+                other_params = [p for p in all_raw_parameters if p not in TOLERANCE_LIMITS.keys() and p not in IGNORED_PARAMETERS]
+
+                col_geom, col_ign = st.columns(2)
+                with col_geom:
+                    st.subheader("✅ Parâmetros de Geometria Encontrados:")
+                    st.markdown(f"**{len(geometry_params)}** parâmetros de medição definidos nos limites.")
+                    st.code('\n'.join(sorted(geometry_params)), language='text')
+                with col_ign:
+                    st.subheader("❌ Parâmetros de Identificação/Texto (Ignorados):")
+                    st.markdown(f"**{len(ignored_params)}** parâmetros de metadados definidos para ignorar.")
+                    st.code('\n'.join(sorted(ignored_params)), language='text')
+
+                if other_params:
+                    st.subheader("❓ Outros Parâmetros Encontrados:")
+                    st.markdown("Se o seu relatório tem outras medições importantes, adicione-as à lista `TOLERANCE_LIMITS` no código `app.py`.")
+                    st.code('\n'.join(sorted(other_params)), language='text')
+            
             # ----------------------------------------
             # | Análise Global de Conformidade |
             # ----------------------------------------
             st.header("2. Análise Global de Conformidade (Métricas)")
-            # ... (restante do código de exibição, mantido) ...
-        
+            
             df_conformidade = df_limpo[df_limpo['Parameter'].isin(TOLERANCE_LIMITS.keys())].copy()
 
             if not df_conformidade.empty:
