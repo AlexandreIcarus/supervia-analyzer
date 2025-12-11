@@ -35,15 +35,15 @@ IGNORED_PARAMETERS = [
 
 # --- Mapeamentos para os DOIS formatos possíveis ---
 
-# NOVO MAPEARMENTO COMPLEXO: Inclui colunas adjacentes para o campo 'Value'
+# MAPEARMENTO COMPLEXO (Busca por Value em 3 colunas adjacentes para robustez)
 COMPLEX_COL_MAP = {
     0: 'KM', 3: 'M', 8: 'Parameter', 
-    26: 'Value_26', 27: 'Value_27', 28: 'Value_28',  # Colunas de contingência para o Value
+    26: 'Value_26', 27: 'Value_27', 28: 'Value_28',  
     31: 'Length', 39: 'Speed', 44: 'TSC', 55: 'Track', 62: 'Peak Lat/Long'
 }
 COMPLEX_HEADER_ROW = 4
 
-# Mapeamento do formato simplificado (CSV filtrado) - MANTIDO
+# Mapeamento do formato simplificado (CSV filtrado)
 SIMPLIFIED_REQUIRED_COLS = ['KM', 'M', 'Parameter', 'Value', 'Length', 'Speed', 'TSC', 'Track', 'Peak Lat', 'Peak Long']
 SIMPLIFIED_HEADER_ROW = 0 
 
@@ -71,7 +71,7 @@ def check_conformity(df):
     return df
 
 
-# --- Função Principal de Limpeza e Processamento (Aprimorada para Flexibilidade) ---
+# --- Função Principal de Limpeza e Processamento (Corrigida e Aprimorada) ---
 @st.cache_data
 def processar_dados_ferrovia(uploaded_file):
     
@@ -84,7 +84,8 @@ def processar_dados_ferrovia(uploaded_file):
         uploaded_file.seek(0)
         
         if file_extension == 'csv':
-            df_read = pd.read_csv(uploaded_file, sep=',', header=SIMPLIFIED_HEADER_ROW, engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ)
+            # CORREÇÃO: Adicionado encoding='latin1' para maior compatibilidade com Streamlit Cloud/Linux
+            df_read = pd.read_csv(uploaded_file, sep=',', header=SIMPLIFIED_HEADER_ROW, engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ, encoding='latin1')
         elif file_extension == 'xlsx':
             df_read = pd.read_excel(uploaded_file, header=SIMPLIFIED_HEADER_ROW, sheet_name=0, nrows=MAX_ROWS_TO_READ)
 
@@ -92,12 +93,11 @@ def processar_dados_ferrovia(uploaded_file):
         is_simplified = all(col in df_read.columns for col in ['Peak Lat', 'Peak Long', 'KM', 'Parameter'])
         
         if is_simplified:
-            # st.info("Formato SIMPLIFICADO (Filtrado) detectado.")
             df_limpo = df_read[df_read.columns.intersection(SIMPLIFIED_REQUIRED_COLS)].copy()
             df_limpo['Peak Lat/Long'] = df_limpo['Peak Lat'].astype(str) + ',' + df_limpo['Peak Long'].astype(str)
             df_limpo = df_limpo.drop(columns=['Peak Lat', 'Peak Long'], errors='ignore')
             
-            # Renomeia o 'Value' para o padrão final, para que a lógica de limpeza abaixo funcione
+            # Renomeia o 'Value' para o padrão Value_26 para que a lógica de coalescência funcione
             df_limpo = df_limpo.rename(columns={'Value': 'Value_26'}) 
             
         else:
@@ -113,11 +113,11 @@ def processar_dados_ferrovia(uploaded_file):
             uploaded_file.seek(0) 
 
             if file_extension == 'csv':
-                df = pd.read_csv(uploaded_file, sep=',', header=COMPLEX_HEADER_ROW, engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ)
+                # CORREÇÃO: Adicionado encoding='latin1' para maior compatibilidade com Streamlit Cloud/Linux
+                df = pd.read_csv(uploaded_file, sep=',', header=COMPLEX_HEADER_ROW, engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ, encoding='latin1')
             elif file_extension == 'xlsx':
                 df = pd.read_excel(uploaded_file, header=COMPLEX_HEADER_ROW, sheet_name=0, nrows=MAX_ROWS_TO_READ)
 
-            # Seleciona as colunas usando os índices definidos no novo mapa
             colunas_para_selecionar = list(COMPLEX_COL_MAP.keys())
             df_limpo = df.iloc[:, colunas_para_selecionar].copy()
             df_limpo.columns = COMPLEX_COL_MAP.values()
