@@ -159,13 +159,14 @@ def check_conformity(df, tolerance_limits):
         value_to_check = df.loc[mask, 'Value']
         
         if limits['check'] == 'max':
-            df.loc[mask, 'Status'] = df.loc[mask, 'Value'].apply(lambda x: 'Fora do Limite' if x > limits['max'] else 'Em Conformidade')
+            # === AJUSTE DE STATUS: Agora, só há 'Fora do Limite' e 'Em Conformidade (Próximo)' ===
+            df.loc[mask, 'Status'] = df.loc[mask, 'Value'].apply(lambda x: 'Fora do Limite' if x > limits['max'] else 'Em Conformidade (Próximo)')
             df.loc[mask, 'Delta'] = df.loc[mask, 'Value'].apply(lambda x: x - limits['max'] if x > limits['max'] else 0)
         elif limits['check'] == 'min':
-            df.loc[mask, 'Status'] = df.loc[mask, 'Value'].apply(lambda x: 'Fora do Limite' if x < limits['min'] else 'Em Conformidade')
+            df.loc[mask, 'Status'] = df.loc[mask, 'Value'].apply(lambda x: 'Fora do Limite' if x < limits['min'] else 'Em Conformidade (Próximo)')
             df.loc[mask, 'Delta'] = df.loc[mask, 'Value'].apply(lambda x: limits['min'] - x if x < limits['min'] else 0)
         elif limits['check'] == 'abs_max':
-            df.loc[mask, 'Status'] = value_to_check.apply(lambda x: 'Fora do Limite' if abs(x) > limits['max'] else 'Em Conformidade')
+            df.loc[mask, 'Status'] = value_to_check.apply(lambda x: 'Fora do Limite' if abs(x) > limits['max'] else 'Em Conformidade (Próximo)')
             df.loc[mask, 'Delta'] = value_to_check.apply(lambda x: abs(x) - limits['max'] if abs(x) > limits['max'] else 0)
             
     # Preenche o nome em português para os demais, se existirem
@@ -366,7 +367,6 @@ if uploaded_file is not None:
             
             # ----------------------------------------
             # | Análise Global de Conformidade |
-            # (Conteúdo idêntico ao anterior)
             # ----------------------------------------
             st.header("3. Análise Global de Conformidade (Métricas)")
             
@@ -375,6 +375,11 @@ if uploaded_file is not None:
             if not df_conformidade.empty:
                 
                 metrics = df_conformidade.groupby('Parâmetro (Português)')['Status'].value_counts(normalize=True).mul(100).unstack(fill_value=0)
+                
+                # Novo: Renomear a coluna de "Em Conformidade (Próximo)" para algo mais conciso na métrica
+                if 'Em Conformidade (Próximo)' in metrics.columns:
+                    metrics = metrics.rename(columns={'Em Conformidade (Próximo)': 'Em Conformidade'})
+                
                 metrics['Total Exceções'] = metrics.get('Fora do Limite', 0)
                 metrics = metrics[['Total Exceções']]
                 metrics = metrics.sort_values(by='Total Exceções', ascending=False)
@@ -388,13 +393,20 @@ if uploaded_file is not None:
                     df_pie = df_conformidade[df_conformidade['Parâmetro (Português)'] == most_critical_param]['Status'].value_counts().reset_index()
                     df_pie.columns = ['Status', 'Contagem']
 
+                    # === NOVO MAPA DE CORES PARA GRÁFICO DE PIZZA (Sem Verde) ===
+                    color_map_pie = {
+                        'Fora do Limite':'red', 
+                        'Em Conformidade (Próximo)':'orange', # Mudando para Laranja/Amarelo
+                        'Não Aplicável': 'gray'
+                    }
+
                     fig_pie = px.pie(
                         df_pie, 
                         values='Contagem', 
                         names='Status', 
                         title=f'Conformidade para {most_critical_param}',
                         color='Status',
-                        color_discrete_map={'Fora do Limite':'red', 'Em Conformidade':'green', 'Não Aplicável': 'gray'},
+                        color_discrete_map=color_map_pie,
                         hole=.3
                     )
                     st.plotly_chart(fig_pie, use_container_width=True)
@@ -454,7 +466,8 @@ if uploaded_file is not None:
                             color='Delta',
                             title=f'Delta (Excesso ao Limite) de {selected_param_delta}',
                             labels={'Delta': 'Excesso ao Limite (mm)', 'Localização': 'KM+M'},
-                            hover_data=['Track', 'TSC', 'Value']
+                            hover_data=['Track', 'TSC', 'Value'],
+                            color_continuous_scale=px.colors.sequential.Inferno_r # Mantendo escala de severidade
                         )
                         fig_delta.update_xaxes(categoryorder='array', categoryarray=df_criticos_delta['Localização'])
                         st.plotly_chart(fig_delta, use_container_width=True)
@@ -518,7 +531,8 @@ if uploaded_file is not None:
                         color='Value',
                         title=f'Comparação de {selected_param_value} por Localização',
                         labels={'Value': 'Valor Medido (mm)', 'Localização': 'KM+M'},
-                        hover_data=['Track', 'TSC', 'Status']
+                        hover_data=['Track', 'TSC', 'Status'],
+                        color_continuous_scale=px.colors.sequential.Plasma # Escala neutra para valor bruto
                     )
                     fig_value.update_xaxes(categoryorder='array', categoryarray=df_criticos_value['Localização'])
                     st.plotly_chart(fig_value, use_container_width=True)
@@ -532,101 +546,168 @@ if uploaded_file is not None:
                     st.info(f"Nenhum dado encontrado para o parâmetro: {selected_param_value}")
 
 
-            # ====== TAB 3: VISUALIZAÇÃO NO MAPA (Com Zoom Dinâmico) ======
+            # ====== TAB 3: VISUALIZAÇÃO NO MAPA (Com Faixa de Severidade) ======
             with tab_mapa:
-                st.subheader("Mapa de Problemas (Excedentes ao Limite)")
+                st.subheader("Mapa de Exceções por Severidade e Nuvem de Pontos")
 
-                # Filtra apenas exceções com coordenadas válidas
-                df_mapa = df_limpo[(df_limpo['Status'] == 'Fora do Limite') & 
-                                   (df_limpo['Delta'] > 0) & 
-                                   (df_limpo['Peak Lat'].notna()) & 
-                                   (df_limpo['Peak Long'].notna())].copy()
+                # 1. Seletor de Modo (Mantido)
+                map_mode = st.radio(
+                    "Modo de Visualização do Mapa:",
+                    ("Apenas Exceções (Foco em Problemas)", "Nuvem Completa de Pontos (Todos os Status)"),
+                    key='map_mode_selector',
+                    horizontal=True
+                )
+
+                # Base DataFrame: Todos os pontos de GEOMETRIA com coordenadas válidas
+                df_valid_coords = df_limpo[
+                    (df_limpo['Peak Lat'].notna()) & 
+                    (df_limpo['Peak Long'].notna()) &
+                    (df_limpo['Parameter'].isin(current_limits.keys()))
+                ].copy()
                 
-                if df_mapa.empty:
-                    st.warning("Não há exceções com coordenadas válidas para serem exibidas no mapa.")
+                if df_valid_coords.empty:
+                    st.warning("Não há dados de geometria com coordenadas válidas para serem exibidos no mapa.")
                 else:
-                    col_param, col_zoom = st.columns([1, 1])
+                    col_param, col_placeholder = st.columns([1, 1])
 
-                    # 1. Seletor de Parâmetro para o Mapa
+                    # 2. Seletor de Parâmetro para o Mapa (Aplica-se a ambos os modos)
                     with col_param:
-                        map_params = sorted(df_mapa['Parâmetro (Português)'].unique().tolist())
+                        map_params = sorted(df_valid_coords['Parâmetro (Português)'].unique().tolist())
                         selected_map_param = st.selectbox(
                             "Filtrar no Mapa pelo Parâmetro:", 
                             ['Todos os Parâmetros'] + map_params, 
                             key='map_param_selector'
                         )
                     
+                    # Aplica o filtro de Parâmetro
                     if selected_map_param != 'Todos os Parâmetros':
-                        df_mapa_filtered = df_mapa[df_mapa['Parâmetro (Português)'] == selected_map_param].copy()
+                        df_base_filtered = df_valid_coords[df_valid_coords['Parâmetro (Português)'] == selected_map_param].copy()
                     else:
-                        df_mapa_filtered = df_mapa
-
-                    # 2. Seletor de Localização Específica
-                    with col_zoom:
-                        # Obtém a lista de localizações críticas para o filtro atual
-                        critical_locations = sorted(df_mapa_filtered['Localização'].unique().tolist())
+                        df_base_filtered = df_valid_coords.copy()
                         
-                        selected_location = st.selectbox(
-                            "Selecione a Localização (KM+M) para dar Zoom:", 
-                            ['Geral (Visualização de Rota)'] + critical_locations, 
-                            key='location_zoom_selector'
-                        )
+                    # 3. Aplica o Filtro de Modo
+                    if map_mode == "Apenas Exceções (Foco em Problemas)":
+                        df_mapa_final = df_base_filtered[
+                            (df_base_filtered['Status'] == 'Fora do Limite') & 
+                            (df_base_filtered['Delta'] > 0)
+                        ].copy()
+                        
+                        color_col = 'Delta'
+                        color_continuous_scale = px.colors.sequential.Inferno_r # Escala de calor para severidade
+                        color_discrete_map = None 
+                        hover_data_list = ['Parâmetro (Português)', 'Value', 'Delta', 'Status']
+                        size_col = 'Delta'
+                        
+                    else: # Nuvem Completa de Pontos (Todos os Status) - Foco na Severidade Relativa
+                        df_mapa_final = df_base_filtered.copy()
+                        
+                        # Coluna que combina a cor
+                        df_mapa_final['Severidade_Cor'] = df_mapa_final['Status'].apply(lambda x: 'Fora do Limite' if x == 'Fora do Limite' else 'Quase Limite/Outros')
+                        
+                        color_col = 'Severidade_Cor' # Usar coluna discreta
+                        color_continuous_scale = None 
+                        
+                        # Novo Mapeamento: Cinza para "normal", Amarelo/Vermelho para problema
+                        color_discrete_map = {
+                            'Fora do Limite da norma': 'red', 
+                            'Fora do Limite': 'yellow'
+                        }
+                        
+                        # Para o hover, se for "Quase Limite/Outros", é importante ver o Delta mesmo que seja 0
+                        hover_data_list = ['Parâmetro (Português)', 'Value', 'Status', 'Delta'] 
+                        size_col = None # Não usa tamanho na nuvem completa
+                        
                     
-                    # 3. Define o centro e o zoom baseado na seleção
-                    if selected_location == 'Geral (Visualização de Rota)':
-                        # Visualização geral
-                        center_lat = df_mapa_filtered['Peak Lat'].mean()
-                        center_lon = df_mapa_filtered['Peak Long'].mean()
-                        zoom_level = 10 # Zoom para visão de rota
-                        map_title = f'{selected_map_param} - Visualização de Rota'
+                    # --- Visualização ---
+                    if df_mapa_final.empty:
+                        st.warning(f"Não há pontos de medição com coordenadas válidas para o filtro selecionado (Modo: {map_mode}, Parâmetro: {selected_map_param}).")
                     else:
-                        # Foca no ponto selecionado
-                        focus_point = df_mapa_filtered[df_mapa_filtered['Localização'] == selected_location].iloc[0]
-                        center_lat = focus_point['Peak Lat']
-                        center_lon = focus_point['Peak Long']
-                        zoom_level = 18 # Zoom bem alto para ver o ponto de perto
                         
-                        param_name = focus_point['Parâmetro (Português)']
-                        delta_value = focus_point['Delta']
-                        map_title = f'⚠️ FOCO: {selected_location} - {param_name} (Delta: {delta_value:.2f}mm)'
+                        # 4. Seletor de Localização Específica (para Zoom)
+                        with col_placeholder:
+                            critical_locations = sorted(df_mapa_final['Localização'].unique().tolist())
+                            
+                            selected_location = st.selectbox(
+                                "Selecione a Localização (KM+M) para dar Zoom:", 
+                                ['Geral (Visualização de Rota)'] + critical_locations, 
+                                key='location_zoom_selector'
+                            )
+                        
+                        # 5. Define o centro e o zoom baseado na seleção
+                        if selected_location == 'Geral (Visualização de Rota)':
+                            # Visualização geral
+                            center_lat = df_mapa_final['Peak Lat'].mean()
+                            center_lon = df_mapa_final['Peak Long'].mean()
+                            zoom_level = 10 
+                            map_title = f'Visualização: {selected_map_param} - {map_mode}'
+                            
+                            # Filtra Lat/Long extremos para um melhor centro e zoom inicial
+                            max_lat = df_mapa_final['Peak Lat'].max()
+                            min_lat = df_mapa_final['Peak Lat'].min()
+                            max_lon = df_mapa_final['Peak Long'].max()
+                            min_lon = df_mapa_final['Peak Long'].min()
+                            center_lat = (max_lat + min_lat) / 2
+                            center_lon = (max_lon + min_lon) / 2
 
-                    # Define a coluna de cor (Color Coding)
-                    color_col = 'Delta'
-                    
-                    # Cria o mapa interativo usando Plotly Express
-                    fig_map = px.scatter_mapbox(
-                        df_mapa_filtered,
-                        lat="Peak Lat",
-                        lon="Peak Long",
-                        color=color_col, # Cor pelo Delta (severidade)
-                        size='Delta',    # Opcional: Tamanho do ponto pelo Delta
-                        hover_name="Localização",
-                        hover_data={
-                            'Parâmetro (Português)': True,
-                            'Value': ':.2f',
-                            'Delta': ':.2f',
-                            'Peak Lat': False,
-                            'Peak Long': False
-                        },
-                        color_continuous_scale=px.colors.sequential.Inferno_r, # Escala de cores (Invertida: Amarelo/Laranja é mais alto)
-                        zoom=zoom_level, 
-                        center={"lat": center_lat, "lon": center_lon},
-                        title=map_title
-                    )
-                    
-                    # Configurações do layout do mapa
-                    fig_map.update_layout(
-                        mapbox_style="carto-positron", # Estilo de mapa leve
-                        autosize=True,
-                        margin={"r":0,"t":50,"l":0,"b":0},
-                        coloraxis_colorbar=dict(
-                            title="Excesso ao Limite (Delta/mm)",
+                        else:
+                            # Foca no ponto selecionado
+                            focus_point = df_mapa_final[df_mapa_final['Localização'] == selected_location].iloc[0]
+                            center_lat = focus_point['Peak Lat']
+                            center_lon = focus_point['Peak Long']
+                            zoom_level = 18 
+                            
+                            param_name = focus_point['Parâmetro (Português)']
+                            title_detail = f"Status: {focus_point['Status']}"
+                            if focus_point.get('Delta', 0) > 0:
+                                title_detail += f" (Delta: {focus_point['Delta']:.2f}mm)"
+                            
+                            map_title = f'⚠️ FOCO: {selected_location} - {param_name} - {title_detail}'
+                        
+                        
+                        # 6. Cria o mapa interativo usando Plotly Express
+                        if map_mode == "Apenas Exceções (Foco em Problemas)":
+                            color_bar_title = "Excesso ao Limite (Delta/mm)"
+                            fig_map = px.scatter_mapbox(
+                                df_mapa_final,
+                                lat="Peak Lat",
+                                lon="Peak Long",
+                                color=color_col, 
+                                color_continuous_scale=color_continuous_scale,
+                                size=size_col,
+                                hover_name="Localização",
+                                hover_data=hover_data_list + ['Track', 'TSC', 'Peak Lat/Long'],
+                                zoom=zoom_level, 
+                                center={"lat": center_lat, "lon": center_lon},
+                                title=map_title
+                            )
+                        else: # Nuvem Completa (Severidade Discreta)
+                            color_bar_title = "Severidade"
+                            fig_map = px.scatter_mapbox(
+                                df_mapa_final,
+                                lat="Peak Lat",
+                                lon="Peak Long",
+                                color=color_col, 
+                                color_discrete_map=color_discrete_map,
+                                hover_name="Localização",
+                                hover_data=hover_data_list + ['Track', 'TSC', 'Peak Lat/Long'],
+                                zoom=zoom_level, 
+                                center={"lat": center_lat, "lon": center_lon},
+                                title=map_title
+                            )
+                        
+                        # Configurações do layout do mapa
+                        fig_map.update_layout(
+                            mapbox_style="carto-positron", 
+                            autosize=True,
+                            margin={"r":0,"t":50,"l":0,"b":0},
+                            coloraxis_colorbar=dict(
+                                title=color_bar_title,
+                            )
                         )
-                    )
-                    
-                    st.plotly_chart(fig_map, use_container_width=True)
+                        
+                        st.plotly_chart(fig_map, use_container_width=True)
 
-                    st.info(f"O mapa exibe **{len(df_mapa_filtered)}** pontos fora do limite para o filtro atual. Use o seletor acima para focar em um ponto.")
+                        st.info(f"O mapa exibe **{len(df_mapa_final)}** pontos para o filtro atual (Modo: {map_mode}, Parâmetro: {selected_map_param}).")
 
 
             # ----------------------------------------
