@@ -3,25 +3,117 @@ import pandas as pd
 import plotly.express as px
 import io
 
-# --- Configurações da Aplicação ---
-st.set_page_config(layout="wide")
+# --- TÍTULO DA PÁGINA E CONFIGURAÇÕES ---
+# O 'page_title' é o texto que aparece na aba do navegador.
+st.set_page_config(
+    layout="wide", 
+    page_title="RTGA - Rail Track Geometry Analyzer - TRIVIA (By Alê Brito)"
+)
 
 # ====================================================================
-# !!! ATENÇÃO: COLOQUE AQUI OS VALORES CORRETOS DA SUPERVIA !!!
+# [LOGO E TÍTULO] Mantido o posicionamento no topo da área principal
 # ====================================================================
-TOLERANCE_LIMITS = {
-    'Gage Wide': {'min': 1600, 'max': 1630, 'check': 'max'},      
-    'Gage Narrow': {'min': 1580, 'max': 1600, 'check': 'min'},    
-    'Crosslevel': {'min': -150, 'max': 150, 'check': 'abs_max'},
-    'Twist 3': {'min': 0, 'max': 25, 'check': 'max'},
-    'Twist 10': {'min': 0, 'max': 40, 'check': 'max'},
-    'L Align 20': {'min': -70, 'max': 70, 'check': 'abs_max'},
-    'R Align 20': {'min': -70, 'max': 70, 'check': 'abs_max'},
-    'L Vert 20': {'min': -70, 'max': 70, 'check': 'abs_max'},
-    'R Vert 20': {'min': -70, 'max': 70, 'check': 'abs_max'},
-    'L Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
-    'R Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+
+# 1. Defina o caminho para o seu logo
+LOGO_PATH = "logoTrivia.png" 
+
+# 2. Insere o logo no topo do corpo principal.
+try:
+    st.image(LOGO_PATH, width=150) 
+except FileNotFoundError:
+    st.error(f"Erro: O arquivo do logo '{LOGO_PATH}' não foi encontrado no repositório. Por favor, carregue o arquivo no GitHub.")
+
+# 3. TÍTULO PRINCIPAL (By Alê Brito removido daqui)
+st.title("RTGA - Rail Track Geometry Analyzer - TRIVIA 📊") 
+st.markdown("Análise de conformidade baseada nos **Limites de Tolerância da NBR 16387**.")
+
+# ====================================================================
+# !!! MAPA DE LIMITES POR CLASSE (Baseado na NBR 16387) !!!
+# ====================================================================
+LIMITS_MAP = {
+    'Classe 1 (0-25 km/h)': {
+        'Gage Wide': {'min': 1600, 'max': 1635, 'check': 'max'}, 
+        'Gage Narrow': {'min': 1587, 'max': 1635, 'check': 'min'}, 
+        'Crosslevel': {'min': -76, 'max': 76, 'check': 'abs_max'},
+        'Twist 3': {'min': 0, 'max': 51, 'check': 'max'}, 
+        'Twist 10': {'min': 0, 'max': 51, 'check': 'max'},
+        'L Align 20': {'min': -154, 'max': 154, 'check': 'abs_max'},
+        'R Align 20': {'min': -154, 'max': 154, 'check': 'abs_max'},
+        'L Vert 20': {'min': -76, 'max': 76, 'check': 'abs_max'},
+        'R Vert 20': {'min': -76, 'max': 76, 'check': 'abs_max'},
+        'L Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+        'R Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+    },
+    'Classe 2 (26-45 km/h)': {
+        'Gage Wide': {'min': 1600, 'max': 1632, 'check': 'max'}, 
+        'Gage Narrow': {'min': 1587, 'max': 1632, 'check': 'min'}, 
+        'Crosslevel': {'min': -70, 'max': 70, 'check': 'abs_max'},
+        'Twist 3': {'min': 0, 'max': 44, 'check': 'max'}, 
+        'Twist 10': {'min': 0, 'max': 44, 'check': 'max'},
+        'L Align 20': {'min': -128, 'max': 128, 'check': 'abs_max'},
+        'R Align 20': {'min': -128, 'max': 128, 'check': 'abs_max'},
+        'L Vert 20': {'min': -70, 'max': 70, 'check': 'abs_max'},
+        'R Vert 20': {'min': -70, 'max': 70, 'check': 'abs_max'},
+        'L Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+        'R Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'},
+    },
+    'Classe 3 (45-96 km/h)': {
+        'Gage Wide': {'min': 1600, 'max': 1632, 'check': 'max'}, 
+        'Gage Narrow': {'min': 1587, 'max': 1632, 'check': 'min'}, 
+        'Crosslevel': {'min': -57, 'max': 57, 'check': 'abs_max'},
+        'Twist 3': {'min': 0, 'max': 32, 'check': 'max'}, 
+        'Twist 10': {'min': 0, 'max': 32, 'check': 'max'},
+        'L Align 20': {'min': -93, 'max': 93, 'check': 'abs_max'},
+        'R Align 20': {'min': -93, 'max': 93, 'check': 'abs_max'},
+        'L Vert 20': {'min': -57, 'max': 57, 'check': 'abs_max'},
+        'R Vert 20': {'min': -57, 'max': 57, 'check': 'abs_max'},
+        'L Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+        'R Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+    },
+    'Classe 4 (96-128 km/h)': {
+        'Gage Wide': {'min': 1600, 'max': 1625, 'check': 'max'}, 
+        'Gage Narrow': {'min': 1587, 'max': 1625, 'check': 'min'}, 
+        'Crosslevel': {'min': -51, 'max': 51, 'check': 'abs_max'},
+        'Twist 3': {'min': 0, 'max': 25, 'check': 'max'}, 
+        'Twist 10': {'min': 0, 'max': 25, 'check': 'max'},
+        'L Align 20': {'min': -68, 'max': 68, 'check': 'abs_max'},
+        'R Align 20': {'min': -68, 'max': 68, 'check': 'abs_max'},
+        'L Vert 20': {'min': -51, 'max': 51, 'check': 'abs_max'},
+        'R Vert 20': {'min': -51, 'max': 51, 'check': 'abs_max'},
+        'L Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+        'R Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+    },
+    'Classe 5 (128+ km/h)': {
+        'Gage Wide': {'min': 1600, 'max': 1613, 'check': 'max'}, 
+        'Gage Narrow': {'min': 1587, 'max': 1613, 'check': 'min'}, 
+        'Crosslevel': {'min': -32, 'max': 32, 'check': 'abs_max'},
+        'Twist 3': {'min': 0, 'max': 19, 'check': 'max'}, 
+        'Twist 10': {'min': 0, 'max': 19, 'check': 'max'},
+        'L Align 20': {'min': -55, 'max': 55, 'check': 'abs_max'},
+        'R Align 20': {'min': -55, 'max': 55, 'check': 'abs_max'},
+        'L Vert 20': {'min': -32, 'max': 32, 'check': 'abs_max'},
+        'R Vert 20': {'min': -32, 'max': 32, 'check': 'abs_max'},
+        'L Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+        'R Gage Side Wear (115Re)': {'min': 0, 'max': 10, 'check': 'max'}, 
+    }
 }
+
+
+# --- MAPEAMENTO DE NOMES (Mantido) ---
+PARAMETER_TRANSLATIONS = {
+    'Gage Wide': 'Bitola Aberta (Estática)',
+    'Gage Narrow': 'Bitola Estreita (Estática)',
+    'Crosslevel': 'Desnivelamento (Nível)',
+    'Twist 3': 'Torção (3m) - Prox. ao Nível',
+    'Twist 10': 'Torção (10m) - Prox. ao Nível',
+    'L Align 20': 'Alinhamento Esquerdo (Flecha 20m)',
+    'R Align 20': 'Alinhamento Direito (Flecha 20m)',
+    'L Vert 20': 'Variação Vertical Esquerda (20m)',
+    'R Vert 20': 'Variação Vertical Direita (20m)',
+    'L Gage Side Wear (115Re)': 'Desgaste Lateral Esquerdo',
+    'R Gage Side Wear (115Re)': 'Desgaste Lateral Direito',
+}
+
 
 IGNORED_PARAMETERS = [
     'Railroad', 'Subdivision', 'Tunnel Start', 'Tunnel End', 'Bridge End', 
@@ -33,9 +125,7 @@ IGNORED_PARAMETERS = [
 # ====================================================================
 
 
-# --- Mapeamentos para os DOIS formatos possíveis ---
-
-# MAPEARMENTO COMPLEXO (Busca por Value em 3 colunas adjacentes para robustez)
+# --- Mapeamentos e Constantes (Mantidos) ---
 COMPLEX_COL_MAP = {
     0: 'KM', 3: 'M', 8: 'Parameter', 
     26: 'Value_26', 27: 'Value_27', 28: 'Value_28',  
@@ -43,22 +133,27 @@ COMPLEX_COL_MAP = {
 }
 COMPLEX_HEADER_ROW = 4
 
-# Mapeamento do formato simplificado (CSV filtrado)
 SIMPLIFIED_REQUIRED_COLS = ['KM', 'M', 'Parameter', 'Value', 'Length', 'Speed', 'TSC', 'Track', 'Peak Lat', 'Peak Long']
 SIMPLIFIED_HEADER_ROW = 0 
 
 MAX_ROWS_TO_READ = 11000 
 
 
-# --- Função para Análise de Conformidade (Mantida) ---
-def check_conformity(df):
-    """ Adiciona a coluna 'Status' e 'Delta' ao DataFrame baseado nos limites. """
+# --- Função para Análise de Conformidade (Atualizada para aceitar limites) ---
+def check_conformity(df, tolerance_limits):
+    """ Adiciona a coluna 'Status' e 'Delta' ao DataFrame baseado nos limites fornecidos. """
     df['Status'] = 'Não Aplicável'
     df['Delta'] = 0.0
-    for param, limits in TOLERANCE_LIMITS.items():
+    
+    # Adiciona o nome em português para facilitar a visualização (feito aqui para ser aplicado a todas as linhas)
+    df['Parâmetro (Português)'] = df['Parameter'].apply(lambda p: PARAMETER_TRANSLATIONS.get(p, p))
+
+    for param, limits in tolerance_limits.items():
         mask = df['Parameter'] == param
         if df.loc[mask].empty: continue
+        
         value_to_check = df.loc[mask, 'Value']
+        
         if limits['check'] == 'max':
             df.loc[mask, 'Status'] = df.loc[mask, 'Value'].apply(lambda x: 'Fora do Limite' if x > limits['max'] else 'Em Conformidade')
             df.loc[mask, 'Delta'] = df.loc[mask, 'Value'].apply(lambda x: x - limits['max'] if x > limits['max'] else 0)
@@ -68,12 +163,16 @@ def check_conformity(df):
         elif limits['check'] == 'abs_max':
             df.loc[mask, 'Status'] = value_to_check.apply(lambda x: 'Fora do Limite' if abs(x) > limits['max'] else 'Em Conformidade')
             df.loc[mask, 'Delta'] = value_to_check.apply(lambda x: abs(x) - limits['max'] if abs(x) > limits['max'] else 0)
+            
+    # Preenche o nome em português para os demais, se existirem
+    df['Parâmetro (Português)'] = df['Parâmetro (Português)'].fillna(df['Parameter'])
+
     return df
 
 
-# --- Função Principal de Limpeza e Processamento (Corrigida e Aprimorada) ---
+# --- Função Principal de Limpeza e Processamento (Atualizada para aceitar limites) ---
 @st.cache_data
-def processar_dados_ferrovia(uploaded_file):
+def processar_dados_ferrovia(uploaded_file, tolerance_limits):
     
     file_extension = uploaded_file.name.split('.')[-1].lower()
     df_limpo = pd.DataFrame()
@@ -84,7 +183,6 @@ def processar_dados_ferrovia(uploaded_file):
         uploaded_file.seek(0)
         
         if file_extension == 'csv':
-            # CORREÇÃO: Adicionado encoding='latin1' para maior compatibilidade com Streamlit Cloud/Linux
             df_read = pd.read_csv(uploaded_file, sep=',', header=SIMPLIFIED_HEADER_ROW, engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ, encoding='latin1')
         elif file_extension == 'xlsx':
             df_read = pd.read_excel(uploaded_file, header=SIMPLIFIED_HEADER_ROW, sheet_name=0, nrows=MAX_ROWS_TO_READ)
@@ -96,8 +194,6 @@ def processar_dados_ferrovia(uploaded_file):
             df_limpo = df_read[df_read.columns.intersection(SIMPLIFIED_REQUIRED_COLS)].copy()
             df_limpo['Peak Lat/Long'] = df_limpo['Peak Lat'].astype(str) + ',' + df_limpo['Peak Long'].astype(str)
             df_limpo = df_limpo.drop(columns=['Peak Lat', 'Peak Long'], errors='ignore')
-            
-            # Renomeia o 'Value' para o padrão Value_26 para que a lógica de coalescência funcione
             df_limpo = df_limpo.rename(columns={'Value': 'Value_26'}) 
             
         else:
@@ -113,7 +209,6 @@ def processar_dados_ferrovia(uploaded_file):
             uploaded_file.seek(0) 
 
             if file_extension == 'csv':
-                # CORREÇÃO: Adicionado encoding='latin1' para maior compatibilidade com Streamlit Cloud/Linux
                 df = pd.read_csv(uploaded_file, sep=',', header=COMPLEX_HEADER_ROW, engine='python', on_bad_lines='skip', nrows=MAX_ROWS_TO_READ, encoding='latin1')
             elif file_extension == 'xlsx':
                 df = pd.read_excel(uploaded_file, header=COMPLEX_HEADER_ROW, sheet_name=0, nrows=MAX_ROWS_TO_READ)
@@ -126,61 +221,93 @@ def processar_dados_ferrovia(uploaded_file):
             st.error(f"Erro Crítico ao processar arquivo nos dois formatos. Verifique o cabeçalho. Detalhe: {complex_e}")
             return None, None, None 
 
-    # --- Lógica de Limpeza Comum aos DOIS Formatos ---
+    # --- Lógica de Limpeza Comum aos DOIS Formatos (Mantida) ---
     if df_limpo.empty: return None, None, None
     
     all_raw_parameters = df_limpo['Parameter'].astype(str).str.strip().unique().tolist()
     
-    # 1. Limpeza de linhas sem Parameter
     df_limpo = df_limpo.dropna(subset=['Parameter'])
-    
-    # 2. FILTRAR PARÂMETROS DE IDENTIFICAÇÃO (TEXTO)
     df_limpo['Parameter'] = df_limpo['Parameter'].astype(str).str.strip()
     df_limpo = df_limpo[~df_limpo['Parameter'].isin(IGNORED_PARAMETERS)].copy()
 
-    # 3. CONSOLIDAÇÃO DO CAMPO 'VALUE' (Safety Net)
     value_cols = [col for col in df_limpo.columns if col.startswith('Value_')]
     
-    # Prepara as colunas Value para conversão (limpa ruído)
     for col in value_cols:
         df_limpo[col] = df_limpo[col].astype(str).str.replace(' ', '').str.replace(',', '.').str.strip()
         df_limpo[col] = pd.to_numeric(df_limpo[col], errors='coerce')
         
-    # Coalesce: O campo 'Value' final será o primeiro campo numérico válido encontrado 
-    # entre Value_26, Value_27, Value_28, etc.
     df_limpo['Value'] = df_limpo[value_cols].bfill(axis=1).iloc[:, 0]
     
-    # 4. Armazena a contagem ANTES de remover os valores nulos
     rows_before_value_filter = len(df_limpo)
     
-    # 5. Remove linhas que falharam na conversão/coalescência (Value ainda é NaN)
     df_limpo = df_limpo.dropna(subset=['Value'])
     
-    # 6. Cria a Localização
     df_limpo['KM'] = pd.to_numeric(df_limpo['KM'], errors='coerce').fillna(0).astype(int)
     df_limpo['M'] = pd.to_numeric(df_limpo['M'], errors='coerce').fillna(0).astype(int)
     df_limpo['Localização'] = df_limpo['KM'].astype(str) + '+' + df_limpo['M'].astype(str).str.zfill(3)
     
-    # Remove as colunas temporárias de Value
     df_limpo = df_limpo.drop(columns=value_cols, errors='ignore')
 
-    df_limpo_analisado = check_conformity(df_limpo)
+    df_limpo_analisado = check_conformity(df_limpo, tolerance_limits)
 
     return df_limpo_analisado, rows_before_value_filter, all_raw_parameters 
 
-# --- Interface Streamlit (Mantida) ---
 
-st.title("Rail Track Geometry Analyzer (SUPERVIA) 📊")
-st.markdown("**1. ATENÇÃO:** Ajuste os limites na tabela `TOLERANCE_LIMITS` no código `app.py` com os valores corretos da SUPERVIA.")
-st.markdown(f"**Observação:** O sistema está configurado para ler até **{MAX_ROWS_TO_READ} linhas** e agora suporta arquivos no formato **Original (Completo)** e no formato **Filtrado (Simplificado)**.")
+# --- Tabela de Correlação de Parâmetros (Atualizada para mostrar a classe selecionada) ---
+def display_tolerance_table(selected_class):
+    """ Exibe a tabela de limites para a classe selecionada. """
+    st.subheader(f"Limites de Tolerância Atuais: {selected_class}")
+    
+    limits_data = LIMITS_MAP[selected_class]
 
+    data = []
+    for param, limits in limits_data.items():
+        translation = PARAMETER_TRANSLATIONS.get(param, param)
+        
+        if limits['check'] == 'max':
+            limit_display = f"Máx: {limits['max']} mm"
+        elif limits['check'] == 'min':
+            limit_display = f"Mín: {limits['min']} mm"
+        elif limits['check'] == 'abs_max':
+            limit_display = f"Abs Máx: ±{limits['max']} mm"
+        else:
+            limit_display = "N/A"
+            
+        data.append({
+            'Parâmetro (Inglês)': param,
+            'Parâmetro (Português)': translation,
+            f'Tolerância de Conformidade ({selected_class} - mm)': limit_display,
+        })
+    
+    df_limits = pd.DataFrame(data)
+    st.dataframe(df_limits, use_container_width=True, hide_index=True)
+
+# ----------------------------------------------------
+# | SELEÇÃO DE CLASSE E INTERFACE PRINCIPAL |
+# ----------------------------------------------------
+
+# SELEÇÃO DINÂMICA
+classes = list(LIMITS_MAP.keys())
+selected_class = st.selectbox(
+    "Selecione a Classe de Via da NBR 16387 para Análise:", 
+    classes,
+    index=classes.index('Classe 3 (45-96 km/h)'), 
+    key='class_selector'
+)
+current_limits = LIMITS_MAP[selected_class]
+
+st.header("1. Tabela de Limites e Correlação")
+display_tolerance_table(selected_class)
+
+# --- Upload e Processamento (Mantido) ---
 uploaded_file = st.file_uploader(
-    "1. Carregue o arquivo do relatório (.csv ou .xlsx)", 
+    "2. Carregue o arquivo do relatório (.csv ou .xlsx)", 
     type=['csv', 'xlsx']
 )
 
 if uploaded_file is not None:
-    result = processar_dados_ferrovia(uploaded_file)
+    # PASSANDO OS LIMITES ATUAIS PARA A FUNÇÃO DE PROCESSAMENTO
+    result = processar_dados_ferrovia(uploaded_file, current_limits)
     
     if result is not None:
         df_limpo, rows_before_value_filter, all_raw_parameters = result
@@ -194,15 +321,13 @@ if uploaded_file is not None:
             else:
                  st.info(f"**Detalhe da Limpeza:** O filtro de Parâmetros de Identificação foi aplicado. Todas as {len(df_limpo)} linhas restantes têm valores numéricos válidos.")
 
-            # --- FERRAMENTA DE DIAGNÓSTICO ---
+            # --- FERRAMENTA DE DIAGNÓSTICO (Mantido) ---
             with st.expander("🛠️ Ferramenta de Diagnóstico: Parâmetros Encontrados no Arquivo"):
-                st.warning("Use esta ferramenta para verificar se todos os Parâmetros esperados (medições de geometria) foram lidos e para identificar o que está sendo filtrado.")
-                
                 st.info(f"Foram encontrados **{len(all_raw_parameters)}** Parâmetros únicos na leitura inicial do arquivo.")
                 
-                geometry_params = [p for p in all_raw_parameters if p in TOLERANCE_LIMITS.keys()]
+                geometry_params = [p for p in all_limits.keys() if p in current_limits.keys()] # Usa current_limits.keys() para garantir
                 ignored_params = [p for p in all_raw_parameters if p in IGNORED_PARAMETERS]
-                other_params = [p for p in all_raw_parameters if p not in TOLERANCE_LIMITS.keys() and p not in IGNORED_PARAMETERS]
+                other_params = [p for p in all_raw_parameters if p not in current_limits.keys() and p not in IGNORED_PARAMETERS]
 
                 col_geom, col_ign = st.columns(2)
                 with col_geom:
@@ -216,19 +341,19 @@ if uploaded_file is not None:
 
                 if other_params:
                     st.subheader("❓ Outros Parâmetros Encontrados:")
-                    st.markdown("Se o seu relatório tem outras medições importantes, adicione-as à lista `TOLERANCE_LIMITS` no código `app.py`.")
+                    st.markdown("Se o seu relatório tem outras medições importantes, adicione-as à lista de limites no código `app.py`.")
                     st.code('\n'.join(sorted(other_params)), language='text')
             
             # ----------------------------------------
             # | Análise Global de Conformidade |
             # ----------------------------------------
-            st.header("2. Análise Global de Conformidade (Métricas)")
+            st.header("3. Análise Global de Conformidade (Métricas)")
             
-            df_conformidade = df_limpo[df_limpo['Parameter'].isin(TOLERANCE_LIMITS.keys())].copy()
+            df_conformidade = df_limpo[df_limpo['Parameter'].isin(current_limits.keys())].copy()
 
             if not df_conformidade.empty:
                 
-                metrics = df_conformidade.groupby('Parameter')['Status'].value_counts(normalize=True).mul(100).unstack(fill_value=0)
+                metrics = df_conformidade.groupby('Parâmetro (Português)')['Status'].value_counts(normalize=True).mul(100).unstack(fill_value=0)
                 metrics['Total Exceções'] = metrics.get('Fora do Limite', 0)
                 metrics = metrics[['Total Exceções']]
                 metrics = metrics.sort_values(by='Total Exceções', ascending=False)
@@ -239,7 +364,7 @@ if uploaded_file is not None:
                 if 'Fora do Limite' in df_conformidade['Status'].unique():
                     
                     most_critical_param = metrics.index[0]
-                    df_pie = df_conformidade[df_conformidade['Parameter'] == most_critical_param]['Status'].value_counts().reset_index()
+                    df_pie = df_conformidade[df_conformidade['Parâmetro (Português)'] == most_critical_param]['Status'].value_counts().reset_index()
                     df_pie.columns = ['Status', 'Contagem']
 
                     fig_pie = px.pie(
@@ -261,7 +386,7 @@ if uploaded_file is not None:
             # ----------------------------------------
             # | Análise Detalhada (Tabs) |
             # ----------------------------------------
-            st.header("3. Análise Detalhada de Dados")
+            st.header("4. Análise Detalhada de Dados")
 
             tab_conformidade, tab_bruta = st.tabs(["Análise de Conformidade Crítica (Foco no Delta)", "Análise Bruta (Maiores e Menores Valores)"])
 
@@ -277,7 +402,7 @@ if uploaded_file is not None:
                     col3, col4 = st.columns([1, 1])
 
                     with col3:
-                        ex_params = sorted(df_excecoes['Parameter'].unique().tolist())
+                        ex_params = sorted(df_excecoes['Parâmetro (Português)'].unique().tolist())
                         selected_param_delta = st.selectbox(
                             "Selecione o Parâmetro para Detalhamento:", 
                             ex_params, 
@@ -287,12 +412,12 @@ if uploaded_file is not None:
                         num_top_delta = st.slider(
                             f"Mostrar os Top N Desvios mais Críticos (pelo Delta):", 
                             min_value=5, 
-                            max_value=min(100, len(df_excecoes[df_excecoes['Parameter'] == selected_param_delta])), 
+                            max_value=min(100, len(df_excecoes[df_excecoes['Parâmetro (Português)'] == selected_param_delta])), 
                             value=20,
                             key='top_n_delta'
                         )
 
-                    df_criticos_delta = df_excecoes[df_excecoes['Parameter'] == selected_param_delta] \
+                    df_criticos_delta = df_excecoes[df_excecoes['Parâmetro (Português)'] == selected_param_delta] \
                         .sort_values(by='Delta', ascending=False).head(num_top_delta).reset_index(drop=True)
                     
                     
@@ -310,7 +435,7 @@ if uploaded_file is not None:
                         st.plotly_chart(fig_delta, use_container_width=True)
 
                         st.dataframe(
-                            df_criticos_delta[['Localização', 'Parameter', 'Value', 'Delta', 'Status', 'Length', 'TSC', 'Peak Lat/Long']], 
+                            df_criticos_delta[['Localização', 'Parâmetro (Português)', 'Value', 'Delta', 'Status', 'Length', 'TSC', 'Peak Lat/Long']], 
                             use_container_width=True,
                             hide_index=True
                         )
@@ -326,11 +451,15 @@ if uploaded_file is not None:
                 col5, col6 = st.columns([1, 1])
 
                 with col5:
-                    tipos_de_parametro = sorted(df_limpo['Parameter'].unique().tolist())
+                    tipos_de_parametro = sorted(df_limpo['Parâmetro (Português)'].unique().tolist())
+                    default_index = 0
+                    if PARAMETER_TRANSLATIONS['Gage Wide'] in tipos_de_parametro:
+                        default_index = tipos_de_parametro.index(PARAMETER_TRANSLATIONS['Gage Wide'])
+                        
                     selected_param_value = st.selectbox(
                         "Selecione o Parâmetro de Interesse:", 
                         tipos_de_parametro, 
-                        index=tipos_de_parametro.index('Gage Wide') if 'Gage Wide' in tipos_de_parametro else 0,
+                        index=default_index,
                         key='param_value'
                     )
 
@@ -342,7 +471,7 @@ if uploaded_file is not None:
                         key='ordenacao_value'
                     )
                 
-                df_filtrado_value = df_limpo[df_limpo['Parameter'] == selected_param_value].copy()
+                df_filtrado_value = df_limpo[df_limpo['Parâmetro (Português)'] == selected_param_value].copy()
                 num_top_value = st.slider(
                     f"Mostrar os Top N ({selected_param_value}):", 
                     min_value=5, 
@@ -370,7 +499,7 @@ if uploaded_file is not None:
                     st.plotly_chart(fig_value, use_container_width=True)
 
                     st.dataframe(
-                        df_criticos_value[['Localização', 'Parameter', 'Value', 'Status', 'Length', 'TSC', 'Peak Lat/Long']], 
+                        df_criticos_value[['Localização', 'Parâmetro (Português)', 'Value', 'Status', 'Length', 'TSC', 'Peak Lat/Long']], 
                         use_container_width=True,
                         hide_index=True
                     )
@@ -390,3 +519,26 @@ if uploaded_file is not None:
             )
         else:
             st.warning("O arquivo foi carregado, mas nenhuma linha de dados de medição válida foi encontrada (todos os valores de 'Value' são nulos ou não numéricos).")
+
+
+# ====================================================================
+# [NOVA ALTERAÇÃO] CUSTOM FOOTER NO CANTO INFERIOR DIREITO
+# ====================================================================
+footer_html = """
+<style>
+/* Estilo CSS para posicionar o texto fixo no canto inferior direito */
+.footer {
+    position: fixed;
+    right: 10px;
+    bottom: 10px;
+    color: rgba(250, 250, 250, 0.7); /* Cor clara para visibilidade no fundo escuro padrão do Streamlit */
+    font-size: 0.8em;
+    z-index: 1000; /* Garante que fique acima de outros elementos */
+}
+</style>
+<div class="footer">
+    Por Alê Brito
+</div>
+"""
+# Injeta o HTML/CSS no Streamlit
+st.markdown(footer_html, unsafe_allow_html=True)
