@@ -321,11 +321,12 @@ if uploaded_file is not None:
             else:
                  st.info(f"**Detalhe da Limpeza:** O filtro de Parâmetros de Identificação foi aplicado. Todas as {len(df_limpo)} linhas restantes têm valores numéricos válidos.")
 
-            # --- FERRAMENTA DE DIAGNÓSTICO (Mantido) ---
+            # --- FERRAMENTA DE DIAGNÓSTICO (Corrigida) ---
             with st.expander("🛠️ Ferramenta de Diagnóstico: Parâmetros Encontrados no Arquivo"):
                 st.info(f"Foram encontrados **{len(all_raw_parameters)}** Parâmetros únicos na leitura inicial do arquivo.")
                 
-                geometry_params = [p for p in all_limits.keys() if p in current_limits.keys()] # Usa current_limits.keys() para garantir
+                # CORREÇÃO APLICADA AQUI: Substituindo 'all_limits.keys()' por 'all_raw_parameters'
+                geometry_params = [p for p in all_raw_parameters if p in current_limits.keys()] 
                 ignored_params = [p for p in all_raw_parameters if p in IGNORED_PARAMETERS]
                 other_params = [p for p in all_raw_parameters if p not in current_limits.keys() and p not in IGNORED_PARAMETERS]
 
@@ -522,7 +523,7 @@ if uploaded_file is not None:
 
 
 # ====================================================================
-# [NOVA ALTERAÇÃO] CUSTOM FOOTER NO CANTO INFERIOR DIREITO
+# [RODAPÉ FIXO] CUSTOM FOOTER NO CANTO INFERIOR DIREITO
 # ====================================================================
 footer_html = """
 <style>
