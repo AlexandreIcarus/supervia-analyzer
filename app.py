@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import io
-# Adiciona a importação de numpy para manipulação de coordenadas
 import numpy as np
 
 # --- TÍTULO DA PÁGINA E CONFIGURAÇÕES ---
@@ -175,7 +174,7 @@ def check_conformity(df, tolerance_limits):
     return df
 
 
-# --- Função Principal de Limpeza e Processamento (ADICIONADA PARSE DE COORDENADAS) ---
+# --- Função Principal de Limpeza e Processamento (Mantida) ---
 @st.cache_data
 def processar_dados_ferrovia(uploaded_file, tolerance_limits):
     
@@ -413,7 +412,7 @@ if uploaded_file is not None:
             tab_conformidade, tab_bruta, tab_mapa = st.tabs([
                 "Análise de Conformidade Crítica (Foco no Delta)", 
                 "Análise Bruta (Maiores e Menores Valores)",
-                "🌎 Visualização no Mapa" # NOVA ABA
+                "🌎 Visualização no Mapa"
             ])
 
             
@@ -533,7 +532,7 @@ if uploaded_file is not None:
                     st.info(f"Nenhum dado encontrado para o parâmetro: {selected_param_value}")
 
 
-            # ====== TAB 3: VISUALIZAÇÃO NO MAPA (NOVA IMPLEMENTAÇÃO) ======
+            # ====== TAB 3: VISUALIZAÇÃO NO MAPA (Com Zoom Dinâmico) ======
             with tab_mapa:
                 st.subheader("Mapa de Problemas (Excedentes ao Limite)")
 
@@ -546,25 +545,51 @@ if uploaded_file is not None:
                 if df_mapa.empty:
                     st.warning("Não há exceções com coordenadas válidas para serem exibidas no mapa.")
                 else:
-                    # Seletor de Parâmetro para o Mapa
-                    map_params = sorted(df_mapa['Parâmetro (Português)'].unique().tolist())
-                    selected_map_param = st.selectbox(
-                        "Filtrar no Mapa pelo Parâmetro:", 
-                        ['Todos os Parâmetros'] + map_params, 
-                        key='map_param_selector'
-                    )
+                    col_param, col_zoom = st.columns([1, 1])
+
+                    # 1. Seletor de Parâmetro para o Mapa
+                    with col_param:
+                        map_params = sorted(df_mapa['Parâmetro (Português)'].unique().tolist())
+                        selected_map_param = st.selectbox(
+                            "Filtrar no Mapa pelo Parâmetro:", 
+                            ['Todos os Parâmetros'] + map_params, 
+                            key='map_param_selector'
+                        )
                     
                     if selected_map_param != 'Todos os Parâmetros':
                         df_mapa_filtered = df_mapa[df_mapa['Parâmetro (Português)'] == selected_map_param].copy()
-                        map_title = f'Pontos Críticos no Mapa: {selected_map_param}'
                     else:
                         df_mapa_filtered = df_mapa
-                        map_title = 'Todos os Pontos Críticos no Mapa (Cor pelo Delta)'
+
+                    # 2. Seletor de Localização Específica
+                    with col_zoom:
+                        # Obtém a lista de localizações críticas para o filtro atual
+                        critical_locations = sorted(df_mapa_filtered['Localização'].unique().tolist())
+                        
+                        selected_location = st.selectbox(
+                            "Selecione a Localização (KM+M) para dar Zoom:", 
+                            ['Geral (Visualização de Rota)'] + critical_locations, 
+                            key='location_zoom_selector'
+                        )
                     
-                    # Calcula o centro do mapa (média das coordenadas)
-                    center_lat = df_mapa_filtered['Peak Lat'].mean()
-                    center_lon = df_mapa_filtered['Peak Long'].mean()
-                    
+                    # 3. Define o centro e o zoom baseado na seleção
+                    if selected_location == 'Geral (Visualização de Rota)':
+                        # Visualização geral
+                        center_lat = df_mapa_filtered['Peak Lat'].mean()
+                        center_lon = df_mapa_filtered['Peak Long'].mean()
+                        zoom_level = 10 # Zoom para visão de rota
+                        map_title = f'{selected_map_param} - Visualização de Rota'
+                    else:
+                        # Foca no ponto selecionado
+                        focus_point = df_mapa_filtered[df_mapa_filtered['Localização'] == selected_location].iloc[0]
+                        center_lat = focus_point['Peak Lat']
+                        center_lon = focus_point['Peak Long']
+                        zoom_level = 18 # Zoom bem alto para ver o ponto de perto
+                        
+                        param_name = focus_point['Parâmetro (Português)']
+                        delta_value = focus_point['Delta']
+                        map_title = f'⚠️ FOCO: {selected_location} - {param_name} (Delta: {delta_value:.2f}mm)'
+
                     # Define a coluna de cor (Color Coding)
                     color_col = 'Delta'
                     
@@ -584,7 +609,7 @@ if uploaded_file is not None:
                             'Peak Long': False
                         },
                         color_continuous_scale=px.colors.sequential.Inferno_r, # Escala de cores (Invertida: Amarelo/Laranja é mais alto)
-                        zoom=10, 
+                        zoom=zoom_level, 
                         center={"lat": center_lat, "lon": center_lon},
                         title=map_title
                     )
@@ -601,7 +626,7 @@ if uploaded_file is not None:
                     
                     st.plotly_chart(fig_map, use_container_width=True)
 
-                    st.info(f"O mapa exibe **{len(df_mapa_filtered)}** pontos fora do limite. A cor do ponto indica a severidade (Delta) do problema.")
+                    st.info(f"O mapa exibe **{len(df_mapa_filtered)}** pontos fora do limite para o filtro atual. Use o seletor acima para focar em um ponto.")
 
 
             # ----------------------------------------
