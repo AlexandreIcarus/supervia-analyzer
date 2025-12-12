@@ -23,7 +23,7 @@ try:
 except FileNotFoundError:
     st.error(f"Erro: O arquivo do logo '{LOGO_PATH}' não foi encontrado no repositório. Por favor, carregue o arquivo no GitHub.")
 
-# 3. TÍTULO PRINCIPAL (By Alê Brito removido daqui)
+# 3. TÍTULO PRINCIPAL
 st.title("RTGA - Rail Track Geometry Analyzer - TRIVIA 📊") 
 st.markdown("Análise de conformidade baseada nos **Limites de Tolerância da NBR 16387**.")
 
@@ -325,7 +325,7 @@ if uploaded_file is not None:
             with st.expander("🛠️ Ferramenta de Diagnóstico: Parâmetros Encontrados no Arquivo"):
                 st.info(f"Foram encontrados **{len(all_raw_parameters)}** Parâmetros únicos na leitura inicial do arquivo.")
                 
-                # CORREÇÃO APLICADA AQUI: Substituindo 'all_limits.keys()' por 'all_raw_parameters'
+                # CORREÇÃO: Usando 'all_raw_parameters' em vez de 'all_limits.keys()'
                 geometry_params = [p for p in all_raw_parameters if p in current_limits.keys()] 
                 ignored_params = [p for p in all_raw_parameters if p in IGNORED_PARAMETERS]
                 other_params = [p for p in all_raw_parameters if p not in current_limits.keys() and p not in IGNORED_PARAMETERS]
@@ -523,18 +523,20 @@ if uploaded_file is not None:
 
 
 # ====================================================================
-# [RODAPÉ FIXO] CUSTOM FOOTER NO CANTO INFERIOR DIREITO
+# [SOLUÇÃO APLICADA AQUI] CUSTOM FOOTER NO CENTRO INFERIOR COM OVERRIDE
 # ====================================================================
 footer_html = """
 <style>
-/* Estilo CSS para posicionar o texto fixo no canto inferior direito */
+/* Estilo CSS para forçar a centralização e prioridade do footer */
 .footer {
-    position: fixed;
-    right: 10px;
-    bottom: 10px;
-    color: rgba(250, 250, 250, 0.7); /* Cor clara para visibilidade no fundo escuro padrão do Streamlit */
+    position: fixed !important; /* Força a posição fixa */
+    bottom: 10px !important; /* Força a distância inferior */
+    left: 0 !important; /* Força a ocupar a partir da margem esquerda */
+    right: 0 !important; /* Força a ocupar até a margem direita */
+    text-align: center !important; /* Força a centralização do texto dentro do elemento */
+    color: rgba(250, 250, 250, 0.7); 
     font-size: 0.8em;
-    z-index: 1000; /* Garante que fique acima de outros elementos */
+    z-index: 999999 !important; /* Z-index muito alto para sobrepor o badge/menu do Streamlit */
 }
 </style>
 <div class="footer">
