@@ -2,16 +2,19 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import io
+# Adiciona a importação de numpy para manipulação de coordenadas
+import numpy as np
 
 # --- TÍTULO DA PÁGINA E CONFIGURAÇÕES ---
-# O 'page_title' é o texto que aparece na aba do navegador.
 st.set_page_config(
     layout="wide", 
     page_title="RTGA - Rail Track Geometry Analyzer - TRIVIA (By Alê Brito)"
 )
 
 # ====================================================================
-# [LOGO E TÍTULO] Mantido o posicionamento no topo da área principal
+# [LOGO E TÍTULO] 
+# (Conteúdo idêntico ao anterior)
+# ...
 # ====================================================================
 
 # 1. Defina o caminho para o seu logo
@@ -29,6 +32,8 @@ st.markdown("Análise de conformidade baseada nos **Limites de Tolerância da NB
 
 # ====================================================================
 # !!! MAPA DE LIMITES POR CLASSE (Baseado na NBR 16387) !!!
+# (Conteúdo idêntico ao anterior)
+# ...
 # ====================================================================
 LIMITS_MAP = {
     'Classe 1 (0-25 km/h)': {
@@ -139,7 +144,7 @@ SIMPLIFIED_HEADER_ROW = 0
 MAX_ROWS_TO_READ = 11000 
 
 
-# --- Função para Análise de Conformidade (Atualizada para aceitar limites) ---
+# --- Função para Análise de Conformidade (Mantida) ---
 def check_conformity(df, tolerance_limits):
     """ Adiciona a coluna 'Status' e 'Delta' ao DataFrame baseado nos limites fornecidos. """
     df['Status'] = 'Não Aplicável'
@@ -170,7 +175,7 @@ def check_conformity(df, tolerance_limits):
     return df
 
 
-# --- Função Principal de Limpeza e Processamento (Atualizada para aceitar limites) ---
+# --- Função Principal de Limpeza e Processamento (ADICIONADA PARSE DE COORDENADAS) ---
 @st.cache_data
 def processar_dados_ferrovia(uploaded_file, tolerance_limits):
     
@@ -192,8 +197,10 @@ def processar_dados_ferrovia(uploaded_file, tolerance_limits):
         
         if is_simplified:
             df_limpo = df_read[df_read.columns.intersection(SIMPLIFIED_REQUIRED_COLS)].copy()
-            df_limpo['Peak Lat/Long'] = df_limpo['Peak Lat'].astype(str) + ',' + df_limpo['Peak Long'].astype(str)
-            df_limpo = df_limpo.drop(columns=['Peak Lat', 'Peak Long'], errors='ignore')
+            # MANTÉM AS COLUNAS SEPARADAS E AS LIMPA
+            for col in ['Peak Lat', 'Peak Long']:
+                if col in df_limpo.columns:
+                    df_limpo[col] = pd.to_numeric(df_limpo[col], errors='coerce')
             df_limpo = df_limpo.rename(columns={'Value': 'Value_26'}) 
             
         else:
@@ -217,11 +224,20 @@ def processar_dados_ferrovia(uploaded_file, tolerance_limits):
             df_limpo = df.iloc[:, colunas_para_selecionar].copy()
             df_limpo.columns = COMPLEX_COL_MAP.values()
             
+            # NO FORMATO COMPLEXO, DIVIDE Peak Lat/Long em duas colunas
+            df_limpo[['Peak Lat', 'Peak Long']] = df_limpo['Peak Lat/Long'].str.split(',', expand=True)
+            df_limpo = df_limpo.drop(columns=['Peak Lat/Long'], errors='ignore')
+            
+            # Limpa e converte as novas colunas de Lat/Long
+            for col in ['Peak Lat', 'Peak Long']:
+                 df_limpo[col] = df_limpo[col].astype(str).str.strip().str.replace(' ', '').str.replace(',', '.').str.replace('|', '', regex=False)
+                 df_limpo[col] = pd.to_numeric(df_limpo[col], errors='coerce')
+
         except Exception as complex_e:
             st.error(f"Erro Crítico ao processar arquivo nos dois formatos. Verifique o cabeçalho. Detalhe: {complex_e}")
             return None, None, None 
 
-    # --- Lógica de Limpeza Comum aos DOIS Formatos (Mantida) ---
+    # --- Lógica de Limpeza Comum aos DOIS Formatos (Continuada) ---
     if df_limpo.empty: return None, None, None
     
     all_raw_parameters = df_limpo['Parameter'].astype(str).str.strip().unique().tolist()
@@ -249,11 +265,15 @@ def processar_dados_ferrovia(uploaded_file, tolerance_limits):
     df_limpo = df_limpo.drop(columns=value_cols, errors='ignore')
 
     df_limpo_analisado = check_conformity(df_limpo, tolerance_limits)
+    
+    # 3. Reconstrói Peak Lat/Long para exibição
+    # Isso é importante para que as colunas 'Peak Lat' e 'Peak Long' existam no DataFrame final
+    df_limpo_analisado['Peak Lat/Long'] = df_limpo_analisado['Peak Lat'].round(6).astype(str) + ',' + df_limpo_analisado['Peak Long'].round(6).astype(str)
 
     return df_limpo_analisado, rows_before_value_filter, all_raw_parameters 
 
 
-# --- Tabela de Correlação de Parâmetros (Atualizada para mostrar a classe selecionada) ---
+# --- Tabela de Correlação de Parâmetros (Mantida) ---
 def display_tolerance_table(selected_class):
     """ Exibe a tabela de limites para a classe selecionada. """
     st.subheader(f"Limites de Tolerância Atuais: {selected_class}")
@@ -321,7 +341,7 @@ if uploaded_file is not None:
             else:
                  st.info(f"**Detalhe da Limpeza:** O filtro de Parâmetros de Identificação foi aplicado. Todas as {len(df_limpo)} linhas restantes têm valores numéricos válidos.")
 
-            # --- FERRAMENTA DE DIAGNÓSTICO (Corrigida) ---
+            # --- FERRAMENTA DE DIAGNÓSTICO (Mantida) ---
             with st.expander("🛠️ Ferramenta de Diagnóstico: Parâmetros Encontrados no Arquivo"):
                 st.info(f"Foram encontrados **{len(all_raw_parameters)}** Parâmetros únicos na leitura inicial do arquivo.")
                 
@@ -347,6 +367,7 @@ if uploaded_file is not None:
             
             # ----------------------------------------
             # | Análise Global de Conformidade |
+            # (Conteúdo idêntico ao anterior)
             # ----------------------------------------
             st.header("3. Análise Global de Conformidade (Métricas)")
             
@@ -385,14 +406,18 @@ if uploaded_file is not None:
 
 
             # ----------------------------------------
-            # | Análise Detalhada (Tabs) |
+            # | Análise Detalhada (Tabs) - ADIÇÃO DE MAPA |
             # ----------------------------------------
             st.header("4. Análise Detalhada de Dados")
 
-            tab_conformidade, tab_bruta = st.tabs(["Análise de Conformidade Crítica (Foco no Delta)", "Análise Bruta (Maiores e Menores Valores)"])
+            tab_conformidade, tab_bruta, tab_mapa = st.tabs([
+                "Análise de Conformidade Crítica (Foco no Delta)", 
+                "Análise Bruta (Maiores e Menores Valores)",
+                "🌎 Visualização no Mapa" # NOVA ABA
+            ])
 
             
-            # ====== TAB 1: ANÁLISE DE CONFORMIDADE CRÍTICA (Foco no Delta) ======
+            # ====== TAB 1: ANÁLISE DE CONFORMIDADE CRÍTICA (Foco no Delta) (Mantida) ======
             with tab_conformidade:
                 st.subheader("Exceções que Mais Excederam o Limite (Rankeado por Delta)")
                 
@@ -445,7 +470,7 @@ if uploaded_file is not None:
                     st.info("Nenhuma exceção encontrada para os limites definidos.")
 
 
-            # ====== TAB 2: ANÁLISE BRUTA (Maiores e Menores Valores) ======
+            # ====== TAB 2: ANÁLISE BRUTA (Maiores e Menores Valores) (Mantida) ======
             with tab_bruta:
                 st.subheader("Análise de Extremos (Maiores ou Menores Valores Medidos)")
 
@@ -508,6 +533,77 @@ if uploaded_file is not None:
                     st.info(f"Nenhum dado encontrado para o parâmetro: {selected_param_value}")
 
 
+            # ====== TAB 3: VISUALIZAÇÃO NO MAPA (NOVA IMPLEMENTAÇÃO) ======
+            with tab_mapa:
+                st.subheader("Mapa de Problemas (Excedentes ao Limite)")
+
+                # Filtra apenas exceções com coordenadas válidas
+                df_mapa = df_limpo[(df_limpo['Status'] == 'Fora do Limite') & 
+                                   (df_limpo['Delta'] > 0) & 
+                                   (df_limpo['Peak Lat'].notna()) & 
+                                   (df_limpo['Peak Long'].notna())].copy()
+                
+                if df_mapa.empty:
+                    st.warning("Não há exceções com coordenadas válidas para serem exibidas no mapa.")
+                else:
+                    # Seletor de Parâmetro para o Mapa
+                    map_params = sorted(df_mapa['Parâmetro (Português)'].unique().tolist())
+                    selected_map_param = st.selectbox(
+                        "Filtrar no Mapa pelo Parâmetro:", 
+                        ['Todos os Parâmetros'] + map_params, 
+                        key='map_param_selector'
+                    )
+                    
+                    if selected_map_param != 'Todos os Parâmetros':
+                        df_mapa_filtered = df_mapa[df_mapa['Parâmetro (Português)'] == selected_map_param].copy()
+                        map_title = f'Pontos Críticos no Mapa: {selected_map_param}'
+                    else:
+                        df_mapa_filtered = df_mapa
+                        map_title = 'Todos os Pontos Críticos no Mapa (Cor pelo Delta)'
+                    
+                    # Calcula o centro do mapa (média das coordenadas)
+                    center_lat = df_mapa_filtered['Peak Lat'].mean()
+                    center_lon = df_mapa_filtered['Peak Long'].mean()
+                    
+                    # Define a coluna de cor (Color Coding)
+                    color_col = 'Delta'
+                    
+                    # Cria o mapa interativo usando Plotly Express
+                    fig_map = px.scatter_mapbox(
+                        df_mapa_filtered,
+                        lat="Peak Lat",
+                        lon="Peak Long",
+                        color=color_col, # Cor pelo Delta (severidade)
+                        size='Delta',    # Opcional: Tamanho do ponto pelo Delta
+                        hover_name="Localização",
+                        hover_data={
+                            'Parâmetro (Português)': True,
+                            'Value': ':.2f',
+                            'Delta': ':.2f',
+                            'Peak Lat': False,
+                            'Peak Long': False
+                        },
+                        color_continuous_scale=px.colors.sequential.Inferno_r, # Escala de cores (Invertida: Amarelo/Laranja é mais alto)
+                        zoom=10, 
+                        center={"lat": center_lat, "lon": center_lon},
+                        title=map_title
+                    )
+                    
+                    # Configurações do layout do mapa
+                    fig_map.update_layout(
+                        mapbox_style="carto-positron", # Estilo de mapa leve
+                        autosize=True,
+                        margin={"r":0,"t":50,"l":0,"b":0},
+                        coloraxis_colorbar=dict(
+                            title="Excesso ao Limite (Delta/mm)",
+                        )
+                    )
+                    
+                    st.plotly_chart(fig_map, use_container_width=True)
+
+                    st.info(f"O mapa exibe **{len(df_mapa_filtered)}** pontos fora do limite. A cor do ponto indica a severidade (Delta) do problema.")
+
+
             # ----------------------------------------
             # | Download |
             # ----------------------------------------
@@ -523,20 +619,21 @@ if uploaded_file is not None:
 
 
 # ====================================================================
-# [SOLUÇÃO APLICADA AQUI] CUSTOM FOOTER NO CENTRO INFERIOR COM OVERRIDE
+# [CUSTOM FOOTER NO CENTRO INFERIOR COM OVERRIDE] 
+# (Conteúdo idêntico ao anterior)
 # ====================================================================
 footer_html = """
 <style>
 /* Estilo CSS para forçar a centralização e prioridade do footer */
 .footer {
-    position: fixed !important; /* Força a posição fixa */
-    bottom: 10px !important; /* Força a distância inferior */
-    left: 0 !important; /* Força a ocupar a partir da margem esquerda */
-    right: 0 !important; /* Força a ocupar até a margem direita */
-    text-align: center !important; /* Força a centralização do texto dentro do elemento */
+    position: fixed !important; 
+    bottom: 10px !important; 
+    left: 0 !important; 
+    right: 0 !important; 
+    text-align: center !important; 
     color: rgba(250, 250, 250, 0.7); 
     font-size: 0.8em;
-    z-index: 999999 !important; /* Z-index muito alto para sobrepor o badge/menu do Streamlit */
+    z-index: 999999 !important; 
 }
 </style>
 <div class="footer">
